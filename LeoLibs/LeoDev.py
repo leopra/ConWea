@@ -77,10 +77,20 @@ b['sentence'] = b['sentence'].apply(lambda x: x.lower())
 dfconengl.columns= ['sentence','label']
 
 #code to see labels distribution
-twodmatrix = np.stack(b.label.values, axis=0)
+twodmatrix = np.stack(data15k.label.values, axis=0)
 labelcounts = np.sum(twodmatrix, axis=0)
-
 plt.bar(range(0,13), labelcounts)
+
+data15k = b.sample(20000)
+
+data15keq = data15k[data15k['4']==0]
+
+for i in range(13):
+    b[str(i)] = b['label'].apply(lambda x: 1 if x[i]==1 else 0)
+
+dataset = pd.DataFrame()
+for i in range(13):
+    x = b[b[str(i)]==1].sample(1200)
 
 #code to see 1-2-3 labels distribution
 multilabelpersample = np.sum(twodmatrix, axis=1)
@@ -101,12 +111,44 @@ out.to_pickle('./data/eutopiavert/df.pkl', protocol=3)
 #     return nltk.word_tokenize(text)
 #
 #
-with open('../data/eutopiavert/df.pkl', 'rb') as handle:
+with open('./data/eutopiavert/df.pkl', 'rb') as handle:
     b = pickle.load(handle)
 
-out = b[1320:1340].reset_index().drop('index', axis=1)
-out.to_pickle('./data/eutopiavertzz/df.pkl', protocol=3)
+
 #
 # smaller = b.groupby('label', as_index=False).apply(lambda x: x.sample(20))
 # smaller = smaller.reset_index().drop('level_0', axis=1).drop('level_1', axis=1).sample(frac=1).reset_index()
-# smaller.to_pickle('./data/eutopiaverttest/df.pkl', protocol=3)
+# smaller.to_pickle('./data/models/df.pkl', protocol=3)
+
+######### CODE TO SAMPLE BALANCED DATASET
+with open('./data/eutopiavert/df.pkl', 'rb') as handle:
+    b = pickle.load(handle)
+
+#split labels in multiple columns for easier sampling
+for i in range(13):
+    b[str(i)] = b['label'].apply(lambda x: 1 if x[i]==1 else 0)
+
+onelab = b[b['label'].map(sum)==1]
+twolab = b[b['label'].map(sum)==2]
+threelab = b[b['label'].map(sum)==3]
+forlab = b[b['label'].map(sum)==4]
+
+baldata = pd.DataFrame()
+nsample = 1000
+
+#sample for each class (if i can) then plot distribution
+for i in range(13):
+    x = onelab[onelab[str(i)] == 1]
+    if len(x) > nsample:
+        sam = x.sample(nsample)
+    else:
+        sam = x
+    baldata = baldata.append(sam)
+
+#see if it's balanced
+twodmatrix = np.stack(baldata.label.values, axis=0)
+labelcounts = np.sum(twodmatrix, axis=0)
+plt.bar(range(0,13), labelcounts)
+
+out = baldata.reset_index().drop('index', axis=1)
+out.to_pickle('./data/eutopiavert12000balancedoneclass/df.pkl', protocol=3)

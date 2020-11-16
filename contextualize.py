@@ -1,7 +1,7 @@
 import argparse
 import json
 import re
-
+import pickle
 import numpy as np
 import flair, torch
 from collections import defaultdict
@@ -14,13 +14,13 @@ from nltk.corpus import stopwords
 from util import *
 import json
 from pytorch_pretrained_bert import BertTokenizer
-
+import regexSubBigrams as rebi
 import nltk
 nltk.download('stopwords')
 nltk.download('punkt')
 
 
-def main(dataset_path, temp_dir):
+def main(dataset_path, temp_dir, step):
     def dump_bert_vecs(df, dump_dir):
         print("Getting BERT vectors...")
         embedding = BertEmbeddings('bert-base-uncased')
@@ -93,7 +93,7 @@ def main(dataset_path, temp_dir):
         while True:
             if len(tok_vecs) < num_clusters:
                 break
-            km = KMeans(n_clusters=num_clusters, n_jobs=-1)
+            km = KMeans(n_clusters=num_clusters)
             km.fit(tok_vecs)
             cc = km.cluster_centers_
             if should_stop(cc):
@@ -106,7 +106,7 @@ def main(dataset_path, temp_dir):
         elif len(tok_vecs) <= num_clusters:
             cc = tok_vecs
         else:
-            km = KMeans(n_clusters=num_clusters, n_jobs=-1)
+            km = KMeans(n_clusters=num_clusters)
             km.fit(tok_vecs)
             cc = km.cluster_centers_
         return cc
@@ -204,61 +204,70 @@ def main(dataset_path, temp_dir):
             df["sentence"][index] = " . ".join(sentences)
         return df, word_cluster
 
-
     pkl_dump_dir = dataset_path
     bert_dump_dir = temp_dir + "bert/"
     cluster_dump_dir = temp_dir + "clusters/"
-    df = pickle.load(open(pkl_dump_dir + "df.pkl", "rb"))
-    with open(pkl_dump_dir + "seedwords.json") as fp:
-        label_seedwords_dict = json.load(fp)
 
-    def smallclean(k):
-        x = k.casefold()
-        x = re.sub("\S*\d\S*", "", x).strip()
-        x = re.sub(' +', ' ', x)
-        return x
 
-    df['sentence'] = df['sentence'].apply(lambda x: smallclean(x))
-    #this code substitutes bigrams in the text and seedwords with fake monograms and saves them
-    bigrams = []
-    #mapping from bigrams to fake monograms
-    bigtomon = {}
+    if step == 1 or step == 3:
+        df = pickle.load(open(pkl_dump_dir + "df.pkl", "rb"))
+        with open(pkl_dump_dir + "seedwords.json") as fp:
+            label_seedwords_dict = json.load(fp)
 
-    newdictseed = {}
-    for vert in label_seedwords_dict.keys():
-        newterms = []
-        for i,seed in enumerate(label_seedwords_dict[vert]):
-            x = seed.split(' ')
-            if len(x) == 2:
-                bigrams.append(seed)
-                bigtomon[seed] = "jj" + str(i)
-                newterms.append("jj" + str(i))
-            else:
-                newterms.append(seed)
-        newdictseed[vert]=newterms
+        def smallclean(k):
+            x = k.casefold()
+            x = re.sub("\S*\d\S*", "", x).strip()
+            x = re.sub(' +', ' ', x)
+            return x
 
-    for bigr in bigrams:
-        df['sentence'] = df['sentence'].apply(lambda x: re.sub(bigr, bigtomon[bigr], x))
+        df['sentence'] = df['sentence'].apply(lambda x: smallclean(x))
+        # this code substitutes bigrams in the text and seedwords with fake monograms and saves them
+        bigrams = []
+        # mapping from bigrams to fake monograms
+        bigtomon = {}
 
-    #save the mapping from bigram to monogram
-    jso = json.dumps(bigtomon)
-    f = open(dataset_path + "bigtomon.json", "w")
-    f.write(jso)
-    f.close()
+        newdictseed = {}
+        for vert in label_seedwords_dict.keys():
+            newterms = []
+            for i, seed in enumerate(label_seedwords_dict[vert]):
+                x = seed.split(' ')
+                if len(x) == 2:
+                    bigrams.append(seed)
+                    bigtomon[seed] = ''.join(x)
+                    newterms.append(''.join(x))
+                else:
+                    newterms.append(seed)
+            newdictseed[vert] = newterms
 
-    #save the encoded dictionary
-    jso = json.dumps(newdictseed)
-    f= open(dataset_path +'seedwordsencoded.json', "w")
-    f.write(jso)
-    f.close()
+            bigramset = set(bigrams)
+            df['sentence'] = df['sentence'].apply(lambda x: rebi.substituteBigwithMono(x, bigramset))
 
-    dump_bert_vecs(df, bert_dump_dir)
-    tau = compute_tau(newdictseed, bert_dump_dir)
-    print("Cluster Similarity Threshold: ", tau)
-    cluster_words(tau, bert_dump_dir, cluster_dump_dir)
-    df_contextualized, word_cluster_map = contextualize(df, cluster_dump_dir)
-    pickle.dump(df_contextualized, open(pkl_dump_dir + "df_contextualized.pkl", "wb"))
-    pickle.dump(word_cluster_map, open(pkl_dump_dir + "word_cluster_map.pkl", "wb"))
+        # save the mapping from bigram to monogram
+        jso = json.dumps(bigtomon)
+        f = open(dataset_path + "bigtomon.json", "w")
+        f.write(jso)
+        f.close()
+
+        # save the encoded dictionary
+        jso = json.dumps(newdictseed)
+        f = open(dataset_path + 'seedwordsencoded.json', "w")
+        f.write(jso)
+        f.close()
+        dump_bert_vecs(df, bert_dump_dir)
+
+        #save df with encoded bigrams
+        pickle.dump(df, open(pkl_dump_dir + "df_bigramsmerged.pkl", "wb"))
+
+    if step == 2 or step == 3:
+        df = pickle.load(open(pkl_dump_dir + "df_bigramsmerged.pkl", "rb"))
+        with open(pkl_dump_dir + 'seedwordsencoded.json') as fp:
+            newdictseed  = json.load(fp)
+        tau = compute_tau(newdictseed, bert_dump_dir)
+        print("Cluster Similarity Threshold: ", tau)
+        cluster_words(tau, bert_dump_dir, cluster_dump_dir)
+        df_contextualized, word_cluster_map = contextualize(df, cluster_dump_dir)
+        pickle.dump(df_contextualized, open(pkl_dump_dir + "df_contextualized.pkl", "wb"))
+        pickle.dump(word_cluster_map, open(pkl_dump_dir + "word_cluster_map.pkl", "wb"))
 
 
 if __name__ == "__main__":
@@ -266,7 +275,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_path', type=str, default='./data/nyt/')
     parser.add_argument('--temp_dir', type=str, default='/tmp/')
     parser.add_argument('--gpu_id', type=str, default="cpu")
+    parser.add_argument('--step', type=int, default='3')
     args = parser.parse_args()
     if args.gpu_id != "cpu":
         flair.device = torch.device('cuda:' + str(args.gpu_id))
-    main(dataset_path=args.dataset_path, temp_dir=args.temp_dir)
+    main(dataset_path=args.dataset_path, temp_dir=args.temp_dir, step=args.step)
