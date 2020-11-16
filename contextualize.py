@@ -30,7 +30,7 @@ def main(dataset_path, temp_dir, step):
         except_counter = 0
 
         tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        for index, row in df.iterrows():
+        for index, row in df[22000:].iterrows():
             if index % 100 == 0:
                 print("Finished sentences: " + str(index) + " out of " + str(len(df)))
             #all sentences are undercase now
