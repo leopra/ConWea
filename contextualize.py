@@ -209,7 +209,7 @@ def main(dataset_path, temp_dir, step):
     cluster_dump_dir = temp_dir + "clusters/"
 
 
-    if step == 1 or step == 3:
+    if step == 1 or step == 4:
         df = pickle.load(open(pkl_dump_dir + "df.pkl", "rb"))
         with open(pkl_dump_dir + "seedwords.json") as fp:
             label_seedwords_dict = json.load(fp)
@@ -258,13 +258,16 @@ def main(dataset_path, temp_dir, step):
         #save df with encoded bigrams
         pickle.dump(df, open(pkl_dump_dir + "df_bigramsmerged.pkl", "wb"))
 
-    if step == 2 or step == 3:
-        df = pickle.load(open(pkl_dump_dir + "df_bigramsmerged.pkl", "rb"))
+    if step == 2 or step == 4:
         with open(pkl_dump_dir + 'seedwordsencoded.json') as fp:
             newdictseed  = json.load(fp)
         tau = compute_tau(newdictseed, bert_dump_dir)
         print("Cluster Similarity Threshold: ", tau)
         cluster_words(tau, bert_dump_dir, cluster_dump_dir)
+
+    if step == 3 or step == 4:
+        df = pickle.load(open(pkl_dump_dir + "df_bigramsmerged.pkl", "rb"))
+        cluster_dump_dir = temp_dir + "clusters/"
         df_contextualized, word_cluster_map = contextualize(df, cluster_dump_dir)
         pickle.dump(df_contextualized, open(pkl_dump_dir + "df_contextualized.pkl", "wb"))
         pickle.dump(word_cluster_map, open(pkl_dump_dir + "word_cluster_map.pkl", "wb"))
